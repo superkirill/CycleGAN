@@ -20,4 +20,4 @@ The experimental part of this work consisted of training the original [CycleGAN]
 
 -   To run the test, use the following command:
 
-    python test.py --dataroot datasets/Colorization --name cyclegan --model cycle_gan
+    python test.py --dataroot Datasets/Colorization --name cyclegan_colorization --model cycle_gan --load_size 128 --netG unet_128
