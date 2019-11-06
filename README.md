@@ -16,8 +16,8 @@ The experimental part of this work consisted of training the original [CycleGAN]
  ## Train and test
 -   For training the model, use the following command:
 
-    python train.py --dataroot datasets/maps --name maps_cyclegan --model cycle_gan
+    python train.py --dataroot datasets/Colorization --name cyclegan --model cycle_gan
 
 -   To run the test, use the following command:
 
-    python test.py --dataroot datasets/maps --name maps_cyclegan --model cycle_gan
+    python test.py --dataroot datasets/Colorization --name cyclegan --model cycle_gan
