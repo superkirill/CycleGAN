@@ -15,7 +15,9 @@ The experimental part of this work consisted of training the original [CycleGAN]
 ![enter image description here](https://github.com/superkirill/CycleGAN/blob/master/comparison.jpg?raw=true)
  ## Train and test
 -   For training the model, use the following command:
-python train.py --dataroot datasets/maps --name maps_cyclegan --model cycle_gan
+
+    python train.py --dataroot datasets/maps --name maps_cyclegan --model cycle_gan
 
 -   To run the test, use the following command:
-python test.py --dataroot datasets/maps --name maps_cyclegan --model cycle_gan
+
+    python test.py --dataroot datasets/maps --name maps_cyclegan --model cycle_gan
