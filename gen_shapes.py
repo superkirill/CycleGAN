@@ -37,7 +37,7 @@ def add_gaussian_noise(ima, sigma=120):
     mean = (0,0,0) 
     s = (sigma, sigma, sigma)
     cv2.randn(noise, mean, s)
-    noisy_image = np.maximum(np.minimum((0.9*ima + 0.1*noise),255), 0)
+    noisy_image = np.maximum(np.minimum((ima + noise),255), 0)
     return noisy_image.astype(np.uint8)
 
 def main():
