@@ -27,15 +27,16 @@ See training and test tips at: https://github.com/junyanz/pytorch-CycleGAN-and-p
 See frequently asked questions at: https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/docs/qa.md
 """
 import os
+import torch
 from options.test_options import TestOptions
 from data import create_dataset
 from models import create_model
-from util.visualizer import save_images
+# from util.visualizer import save_images
 from util import html
 from torch import nn
 import cv2
 import numpy as np
-
+from visualization import parser, visualizer
 
 if __name__ == '__main__':
     opt = TestOptions().parse()  # get test options
@@ -49,34 +50,10 @@ if __name__ == '__main__':
     model = create_model(opt)      # create a model given opt.model and other options
     model.setup(opt)               # regular setup: load and print networks; create schedulers
 
-    print(model.netG_A)
-    first_layer = model.netG_A.model.model[0]
+    visualizer = visualizer.Visualizer(model.netG_B.module, "PyTorch")
 
-    # create a website
-    web_dir = os.path.join(opt.results_dir, opt.name, '%s_%s' % (opt.phase, opt.epoch))  # define the website directory
-    webpage = html.HTML(web_dir, 'Experiment = %s, Phase = %s, Epoch = %s' % (opt.name, opt.phase, opt.epoch))
-    # test with eval mode. This only affects layers like batchnorm and dropout.
-    # For [pix2pix]: we use batchnorm and dropout in the original pix2pix. You can experiment it with and without eval() mode.
-    # For [CycleGAN]: It should not affect CycleGAN as CycleGAN uses instancenorm without dropout.
-    if opt.eval:
-        model.eval()
     for i, data in enumerate(dataset):
-        if i >= opt.num_test:  # only apply our model to opt.num_test images.
-            break
-        print(data['B'].shape)
-        myimage = first_layer(data['B'])
-        import sys
-        np.set_printoptions(threshold=sys.maxsize)
-        res = None
-        for j in range(8):
-            row = (myimage[0][j*8].detach().numpy()*255).astype(np.uint8)
-            for i in range(1,8):
-                row = np.concatenate((row, (myimage[0][i+j*8].detach().numpy()*255).astype(np.uint8)), axis=1)
-            if res is None:
-                res = row
-            else:
-                res = np.concatenate((res,row),axis=0)
-        cv2.imshow("Result", res)
-        cv2.waitKey()
+        visualizer.view_response(data=data['B'], layer=0)
+        visualizer.view_response(data=data['B'], layer=2)
+        visualizer.view_response(data=data['B'], layer=5)
 
-    webpage.save()  # save the HTML
