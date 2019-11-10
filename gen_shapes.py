@@ -30,6 +30,16 @@ def gen_circle(canvas=[256, 256], color1=(0,255,0), color2=(0,0,255)):
     cv2.circle(image2, (int(w/2),int(h/2)), int(radius), color2, -1)
     return image1, image2
 
+def add_gaussian_noise(ima, sigma=120):
+    """Add gaussian noise with a given sigma"""
+    rows, columns, channels = ima.shape
+    noise = np.zeros((rows, columns, channels))
+    mean = (0,0,0) 
+    s = (sigma, sigma, sigma)
+    cv2.randn(noise, mean, s)
+    noisy_image = np.maximum(np.minimum((ima + noise),255), 0)
+    return noisy_image.astype(np.uint8)
+
 def main():
 
     # image1 = np.zeros((1, 1, 3), np.uint8) * 255
