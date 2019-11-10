@@ -49,11 +49,29 @@ if __name__ == '__main__':
     dataset = create_dataset(opt)  # create a dataset given opt.dataset_mode and other options
     model = create_model(opt)      # create a model given opt.model and other options
     model.setup(opt)               # regular setup: load and print networks; create schedulers
-
+    print(model.netG_B)
     visualizer = visualizer.Visualizer(model.netG_B.module, "PyTorch")
-
+    visualizer.print_layers()
     for i, data in enumerate(dataset):
-        visualizer.view_response(data=data['B'], layer=0)
-        visualizer.view_response(data=data['B'], layer=2)
-        visualizer.view_response(data=data['B'], layer=5)
-
+        visualizer.display(tensor=data['B'], name="Input image")
+        # model.set_input(data)  # unpack data from data loader
+        # model.test()           # run inference
+        # visuals = model.get_current_visuals()
+        # visualizer.display(tensor=visuals['fake_A'].cpu(), name="Inference")
+        # visualizer.view_response(data=data['B'], layer=0)
+        # visualizer.view_response(data=data['B'], layer=2)
+        # visualizer.view_response(data=data['B'], layer=5)
+        # visualizer.view_response(data=data['B'], layer=8)
+        # visualizer.view_response(data=data['B'], layer=11)
+        # visualizer.view_response(data=data['B'], layer=14)
+        # visualizer.view_response(data=data['B'], layer=17)
+        # visualizer.view_response(data=data['B'], layer=19)
+        # visualizer.view_response(data=data['B'], layer=22)
+        # visualizer.view_response(data=data['B'], layer=25)
+        # visualizer.view_response(data=data['B'], layer=28)
+        # visualizer.view_response(data=data['B'], layer=31)
+        # visualizer.view_response(data=data['B'], layer=35)
+        # visualizer.view_response(data=data['B'], layer=37)
+        visualizer.view_response(data=data['B'], layer=38)
+        # import sys
+        # sys.exit(0)

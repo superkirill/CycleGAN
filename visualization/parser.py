@@ -12,4 +12,3 @@ class Parser():
 
     def get_layers(self):
         return self.framework_parser.get_layers()
-
