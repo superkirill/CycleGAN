@@ -1,22 +1,51 @@
 import numpy as np
-import cv2
+import os
+from PIL import Image
 from torch import cat
-from models import networks
-from torch import nn, device, cuda
+from torch import device, cuda, Tensor
 from . import parser
+from PyQt5 import QtWidgets, uic
+from PyQt5.QtGui import QImage, QPixmap, QIcon
+from PyQt5.QtWidgets import QTreeWidgetItem
 
-class Visualizer(object):
-    """Visualizisation of the nn's layers responses"""
-    def __init__(self, model, framework="PyTorch"):
+
+class Visualizer(QtWidgets.QMainWindow):
+    """Visualization of the nn's layers responses"""
+    def __init__(self, model, framework="PyTorch", opt=None):
+        super(Visualizer, self).__init__()
+        # Load user interface design
+        uic.loadUi('visualization/design.ui', self)
+        # Load parser for a network model
         self.parser = parser.Parser(framework, model)
+        # Extract layers from the model
         self.layers = self.parser.get_layers()
         # If returned a UNet's layers with skip_connections
-        if len(self.layers) == 2:
+        if len(self.layers) == 2 and type(self.layers[0] is list):
             self.skip_connections = self.layers[1]
             self.layers = self.layers[0]
+        # Set image import options
+        self.opt = opt
+        # Detect system's processing device
         self.device = device("cuda" if cuda.is_available() else "cpu")
+        # Set input data for the network
+        self.input = None
+        # Set the number of layer the response of which is being displayed
+        self.current_layer = 0
+        # Set path to the dataset
+        self.data_path = "D:/Документы/University of Bordeaux/TRDP/Code/Datasets"
+        # Connect Qt signals and slots
+        self.tree_network.itemClicked.connect(self.architecture_clicked)
+        self.tree_data.itemClicked.connect(self.data_clicked)
+        # Load data
+        self.load_data(self.data_path, self.tree_data)
+        self.load_architecture(self.tree_network)
 
     def print_layers(self):
+        """Print layers of the model to the console
+
+            Parameters:
+                ---
+        """
         print("\n\nNumber of layers: %d" % len(self.layers))
         for i in range(len(self.layers)):
             print("\t %d:" % i, self.layers[i])
@@ -34,7 +63,6 @@ class Visualizer(object):
                 layer -- non-negative integer representing the number of a layer
                         a response of which is to be viewed
         """
-        target_layer = self.layers[layer]
         # Copy data to the gpu for faster forward propagation
         data_on_gpu = data.to(self.device)
         self.input = data_on_gpu
@@ -50,9 +78,7 @@ class Visualizer(object):
         grid_size = grid_size+1 if (grid_size**2 != response_on_cpu.shape[0]) else grid_size
         # If the tensor has size 3 on axis 0, then it is an RGB image
         if response_on_cpu.shape[0] == 3:
-            image = np.flip(np.moveaxis(response_on_cpu, 0, -1),2)
-            cv2.imshow("Response of layer %d" % layer, image)
-            cv2.waitKey()
+            self.display(response_on_cpu, window="right")
         else:
             image = None
             # Concatenate the responses of all filters in one image
@@ -74,9 +100,7 @@ class Visualizer(object):
                         break
                     image = np.concatenate((image,row),axis=0)
             # Display the image
-            cv2.imshow("Response of layer %d" % layer, image)
-            cv2.waitKey()
-
+            self.display(image, window="right")
 
     def forward(self, data, layer=0):
         """Run forwrard propagation until the specified layer
@@ -102,14 +126,114 @@ class Visualizer(object):
         else:
             return target_layer(data)
 
-    def display(self, tensor, name="Visualizisation"):
+    def display(self, data, window="left"):
         """Display an image represented as a tensor
 
             Parameters:
-                tensor -- input tensor representing an image
-                name -- title of the image
+                data -- input tensor or np.array representing an image
+                window -- a window in which the image will be displayed
         """
-        image = (tensor[0][:].detach().numpy()*255).astype(np.uint8)
-        image = np.flip(np.moveaxis(image, 0, -1),2)
-        cv2.imshow(name, image)
-        cv2.waitKey()
+        if type(data) is Tensor:
+            image = (data[0][:].detach().numpy()*255).astype(np.uint8)
+        else:
+            image = data
+        if len(image.shape) > 2:
+            image = np.moveaxis(image, 0, -1)
+            height, width, channel = image.shape
+            format = QImage.Format_RGB888
+            bytes_per_line = 3 * width
+        else:
+            height, width = image.shape
+            format = QImage.Format_Grayscale8
+            bytes_per_line = width
+        scene = QtWidgets.QGraphicsScene()
+
+        if window == "left":
+            view = self.graphicsView_original
+        else:
+            view = self.graphicsView_response
+        view.setScene(scene)
+        qt_image = QImage(image.tobytes(), width, height, bytes_per_line, format)
+        scene.addPixmap(QPixmap(qt_image))
+
+    def load_architecture(self, tree):
+        """Display the model's architecture in a tree-view
+
+            Parameters:
+                tree - QTreeWidget in which the architecture is displayed
+        """
+        tree.setHeaderLabel("Layer")
+        for layer in self.layers:
+            item = QtWidgets.QTreeWidgetItem()
+            item.setText(0, str(layer))
+            tree.addTopLevelItem(
+                item
+            )
+
+    def load_data(self, path, tree):
+        """Display the train/test data in a tree-view recursively
+
+            Parameters:
+                path - a string presenting a root directory
+                tree - a QTreeWidget object in which the data is loaded
+        """
+        for element in os.listdir(path):
+            path_info = path + "/" + element
+            parent_itm = QTreeWidgetItem(tree, [os.path.basename(element)])
+            if os.path.isdir(path_info):
+                self.load_data(path_info, parent_itm)
+                parent_itm.setIcon(0, QIcon('visualization/folder.ico'))
+            else:
+                parent_itm.setIcon(0, QIcon('visualization/file.ico'))
+
+    def show_window(self):
+        """Display the GUI window"""
+        self.show()
+
+    def architecture_clicked(self, item):
+        """Handle a mouse click on the QTreeWidget containing
+            network's architecture by displaying the response of
+            a respective layer
+
+            Parameters:
+                item - QTreeWidgetItem that is currently selected
+        """
+        self.current_layer = self.tree_network.indexOfTopLevelItem(item)
+        self.view_response(self.input, layer=self.current_layer)
+
+    def data_clicked(self, item):
+        """Handle a mouse click on the QTreeWidget containing
+            train/test - set the image at the specified path
+            as self.input
+
+            Parameters:
+                item - QTreeWidgetItem that is currently selected
+        """
+        path = self.get_item_path(item)
+        if not os.path.isdir(path):
+            # Load image
+            image = Image.open(path)
+            # Resize the image
+            image = image.resize((self.opt.load_size, self.opt.load_size))
+            # Get the number of channels of input image
+            btoA = self.opt.direction == 'BtoA'
+            input_nc = self.opt.output_nc if btoA else self.opt.input_nc
+            grayscale = (input_nc == 1)
+            # Convert to RGB or Gray scale
+            if grayscale:
+                image = image.convert('L')
+            else:
+                image = image.convert('RGB')
+            image = np.array(image)
+            image = np.moveaxis(image, -1, 0).astype(np.float64) / 255.0
+            self.input = Tensor(image).unsqueeze(0)
+            self.display(data=self.input, window="left")
+            self.view_response(self.input, layer=self.current_layer)
+
+    def get_item_path(self, item):
+        path = item.text(0)
+        if item.parent():
+            path = self.get_item_path(item.parent()) + "/" + path
+        else:
+            path = self.data_path + "/" + path
+        return path
