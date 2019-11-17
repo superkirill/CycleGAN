@@ -22,11 +22,6 @@ if __name__ == '__main__':
     model.setup(opt)               # regular setup: load and print networks; create schedulers
 
     app = QtWidgets.QApplication([])
-    visualizer = visualizer.Visualizer(model.netG_B.module, framework="PyTorch", opt=opt)
-    for i, data in enumerate(dataset):
-        visualizer.display(data=data['A'], window="left")
-        visualizer.view_response(data=data['A'], layer=0)
-        break
-
+    visualizer = visualizer.Visualizer(model, framework="PyTorch", opt=opt)
     visualizer.show_window()
     app.exec_()

@@ -1,9 +1,9 @@
 import numpy as np
 import os
 from PIL import Image
-from torch import cat
+from torch import cat, nn
 from torch import device, cuda, Tensor
-from . import parser
+from . import parser, image_viewer
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
 from PyQt5.QtWidgets import QTreeWidgetItem
@@ -13,10 +13,16 @@ class Visualizer(QtWidgets.QMainWindow):
     """Visualization of the nn's layers responses"""
     def __init__(self, model, framework="PyTorch", opt=None):
         super(Visualizer, self).__init__()
+        # Save model
+        self.model = model
+        # Save framework
+        self.framework = framework
         # Load user interface design
         uic.loadUi('visualization/design.ui', self)
+        # Save current direction for a CycleGANModel
+        self.direciton = "BtoA"
         # Load parser for a network model
-        self.parser = parser.Parser(framework, model)
+        self.parser = parser.Parser(framework, model.netG_B.module)
         # Extract layers from the model
         self.layers = self.parser.get_layers()
         # If returned a UNet's layers with skip_connections
@@ -33,9 +39,26 @@ class Visualizer(QtWidgets.QMainWindow):
         self.current_layer = 0
         # Set path to the dataset
         self.data_path = "D:/Документы/University of Bordeaux/TRDP/Code/Datasets"
+        # Replace standard PyQt5 QGraphicsView widgets
+        # with ImageViewer widgets borrowed from
+        # https://stackoverflow.com/questions/35508711/how-to-enable-pan-and-zoom-in-a-qgraphicsview
+        geom_old = self.graphicsView_response.geometry()
+        self.graphicsView_response.deleteLater()
+        self.graphicsView_response = image_viewer.ImageViewer(self)
+        self.graphicsView_response.setGeometry(geom_old)
+        geom_old = self.graphicsView_original.geometry()
+        self.graphicsView_original.deleteLater()
+        self.graphicsView_original = image_viewer.ImageViewer(self)
+        self.graphicsView_original.setGeometry(geom_old)
+        # Set some layout parameters
+        self.button_change_direction.setIcon(QIcon("visualization/change_direction.png"))
+        self.model_name.setText(str(self.model.model_names))
         # Connect Qt signals and slots
         self.tree_network.itemClicked.connect(self.architecture_clicked)
         self.tree_data.itemClicked.connect(self.data_clicked)
+        self.button_change_direction.pressed.connect(self.switch_direction)
+        # self.graphicsView_response.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        # self.graphicsView_response.setResizeAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
         # Load data
         self.load_data(self.data_path, self.tree_data)
         self.load_architecture(self.tree_network)
@@ -70,7 +93,7 @@ class Visualizer(QtWidgets.QMainWindow):
         # Move the resulting response back to the cpu
         response_on_cpu = response_on_gpu.cpu()
         # Shape is (1, num_filters, resolution_x, resolution_y)
-        print("\tShape of the response:", response_on_cpu.shape, " on the layer %d" % layer)
+        # print("\tShape of the response:", response_on_cpu.shape, " on the layer %d" % layer)
         # Convert the response from its tensor form to a numpy array
         response_on_cpu = (response_on_cpu[0][:].detach().numpy()*255).astype(np.uint8)
         # Compute the number of filters per row and column in the resulting image
@@ -146,15 +169,12 @@ class Visualizer(QtWidgets.QMainWindow):
             height, width = image.shape
             format = QImage.Format_Grayscale8
             bytes_per_line = width
-        scene = QtWidgets.QGraphicsScene()
-
         if window == "left":
             view = self.graphicsView_original
         else:
             view = self.graphicsView_response
-        view.setScene(scene)
         qt_image = QImage(image.tobytes(), width, height, bytes_per_line, format)
-        scene.addPixmap(QPixmap(qt_image))
+        view.setPhoto(QPixmap(qt_image))
 
     def load_architecture(self, tree):
         """Display the model's architecture in a tree-view
@@ -163,9 +183,21 @@ class Visualizer(QtWidgets.QMainWindow):
                 tree - QTreeWidget in which the architecture is displayed
         """
         tree.setHeaderLabel("Layer")
-        for layer in self.layers:
+        for index, layer in enumerate(self.layers):
             item = QtWidgets.QTreeWidgetItem()
-            item.setText(0, str(layer))
+            if type(layer) is nn.modules.conv.Conv2d:
+                item.setIcon(0, QIcon('visualization/conv.png'))
+            elif type(layer) is nn.modules.conv.ConvTranspose2d:
+                item.setIcon(0, QIcon('visualization/deconv.png'))
+            elif type(layer) is nn.modules.activation.ReLU:
+                item.setIcon(0, QIcon('visualization/relu.png'))
+            elif type(layer) is nn.modules.activation.LeakyReLU:
+                item.setIcon(0, QIcon('visualization/leakyrelu.png'))
+            elif type(layer) is nn.modules.activation.Tanh:
+                item.setIcon(0, QIcon('visualization/tanh.png'))
+            elif type(layer) is nn.modules.instancenorm.InstanceNorm2d:
+                item.setIcon(0, QIcon('visualization/instancenorm2d.png'))
+            item.setText(0, str(index+1) + ": " + str(layer))
             tree.addTopLevelItem(
                 item
             )
@@ -230,7 +262,35 @@ class Visualizer(QtWidgets.QMainWindow):
             self.display(data=self.input, window="left")
             self.view_response(self.input, layer=self.current_layer)
 
+    def switch_direction(self):
+        """Switch direction in a CycleGAN model"""
+        # Load parser for a network model
+        if self.direciton == "BtoA":
+            self.parser = parser.Parser(self.framework, self.model.netG_A.module)
+            self.direction.setText("From A to B")
+            self.direciton = "AtoB"
+        else:
+            self.parser = parser.Parser(self.framework, self.model.netG_B.module)
+            self.direction.setText("From B to A")
+            self.direciton = "BtoA"
+        # Extract layers from the model
+        self.layers = self.parser.get_layers()
+        # If returned a UNet's layers with skip_connections
+        if len(self.layers) == 2 and type(self.layers[0] is list):
+            self.skip_connections = self.layers[1]
+            self.layers = self.layers[0]
+        # Update responses
+        self.view_response(self.input, layer=self.current_layer)
+
     def get_item_path(self, item):
+        """Get a full path to the object in the file system
+
+            Parameters:
+                item -- QTreeWidgetItem representing a file
+                    or a directory
+            Return value:
+                str -- a full path to the file/directory
+        """
         path = item.text(0)
         if item.parent():
             path = self.get_item_path(item.parent()) + "/" + path
