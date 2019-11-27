@@ -3,6 +3,7 @@ import os
 from PIL import Image
 from torch import cat, nn
 from torch import device, cuda, Tensor
+from torchvision.transforms import transforms
 from . import parser, image_viewer
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
@@ -89,7 +90,7 @@ class Visualizer(QtWidgets.QMainWindow):
         # Copy data to the gpu for faster forward propagation
         data_on_gpu = data.to(self.device)
         self.input = data_on_gpu
-        response_on_gpu = self.forward(data_on_gpu, layer)
+        response_on_gpu = self.forward(data_on_gpu, layer, is_top_level_call=True)
         # Move the resulting response back to the cpu
         response_on_cpu = response_on_gpu.cpu()
         # Shape is (1, num_filters, resolution_x, resolution_y)
@@ -101,7 +102,7 @@ class Visualizer(QtWidgets.QMainWindow):
         grid_size = grid_size+1 if (grid_size**2 != response_on_cpu.shape[0]) else grid_size
         # If the tensor has size 3 on axis 0, then it is an RGB image
         if response_on_cpu.shape[0] == 3:
-            self.display(response_on_cpu, window="right")
+            self.display(response_on_gpu.cpu(), window="right")
         else:
             image = None
             # Concatenate the responses of all filters in one image
@@ -125,7 +126,7 @@ class Visualizer(QtWidgets.QMainWindow):
             # Display the image
             self.display(image, window="right")
 
-    def forward(self, data, layer=0):
+    def forward(self, data, layer=0, is_top_level_call=False):
         """Run forwrard propagation until the specified layer
         
             Parameters:
@@ -141,13 +142,36 @@ class Visualizer(QtWidgets.QMainWindow):
             connection = self.skip_connections[list(zip(*self.skip_connections))[1].index(layer)][0]
             x = self.forward(self.input, connection)
             data = self.forward(data, layer-1)
-            data = cat([x,data],1)
-            return target_layer(data)
+            if is_top_level_call:
+                return target_layer(data)
+            else:
+                return target_layer(cat([x, data], 1))
         if layer > 0:
             data = self.forward(data, layer-1)
             return target_layer(data)
         else:
             return target_layer(data)
+
+    def tensor2im(self, input_image, imtype=np.uint8):
+        """"Converts a Tensor array into a numpy image array.
+
+        Parameters:
+            input_image (tensor) --  the input image tensor array
+            imtype (type)        --  the desired type of the converted numpy array
+        """
+        if not isinstance(input_image, np.ndarray):
+            if isinstance(input_image, Tensor):  # get the data from a variable
+                image_tensor = input_image.data
+            else:
+                return input_image
+            image_numpy = image_tensor[0].cpu().float().numpy()  # convert it into a numpy array
+            if image_numpy.shape[0] == 1:  # grayscale to RGB
+                image_numpy = np.tile(image_numpy, (3, 1, 1))
+            image_numpy = (np.transpose(image_numpy,
+                                        (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
+        else:  # if it is a numpy array, do nothing
+            image_numpy = input_image
+        return image_numpy.astype(imtype)
 
     def display(self, data, window="left"):
         """Display an image represented as a tensor
@@ -156,24 +180,20 @@ class Visualizer(QtWidgets.QMainWindow):
                 data -- input tensor or np.array representing an image
                 window -- a window in which the image will be displayed
         """
-        if type(data) is Tensor:
-            image = (data[0][:].detach().numpy()*255).astype(np.uint8)
-        else:
-            image = data
+        image = self.tensor2im(data)
         if len(image.shape) > 2:
-            image = np.moveaxis(image, 0, -1)
             height, width, channel = image.shape
-            format = QImage.Format_RGB888
+            image_format = QImage.Format_RGB888
             bytes_per_line = 3 * width
         else:
             height, width = image.shape
-            format = QImage.Format_Grayscale8
+            image_format = QImage.Format_Grayscale8
             bytes_per_line = width
         if window == "left":
             view = self.graphicsView_original
         else:
             view = self.graphicsView_response
-        qt_image = QImage(image.tobytes(), width, height, bytes_per_line, format)
+        qt_image = QImage(image.tobytes(), width, height, bytes_per_line, image_format)
         view.setPhoto(QPixmap(qt_image))
 
     def load_architecture(self, tree):
@@ -232,6 +252,7 @@ class Visualizer(QtWidgets.QMainWindow):
         """
         self.current_layer = self.tree_network.indexOfTopLevelItem(item)
         self.view_response(self.input, layer=self.current_layer)
+        self.title_response.setText("Response of layer %d" % (self.tree_network.indexOfTopLevelItem(item) + 1))
 
     def data_clicked(self, item):
         """Handle a mouse click on the QTreeWidget containing
@@ -256,11 +277,15 @@ class Visualizer(QtWidgets.QMainWindow):
                 image = image.convert('L')
             else:
                 image = image.convert('RGB')
-            image = np.array(image)
-            image = np.moveaxis(image, -1, 0).astype(np.float64) / 255.0
-            self.input = Tensor(image).unsqueeze(0)
+            transform_list = [transforms.ToTensor(),
+                              transforms.Normalize((0.5, 0.5, 0.5),
+                              (0.5, 0.5, 0.5))]
+            trans = transforms.Compose(transform_list)
+            image = trans(image)
+            self.input = image.unsqueeze(0)
             self.display(data=self.input, window="left")
             self.view_response(self.input, layer=self.current_layer)
+            self.title_response.setText("Response of layer %d" % (self.current_layer+1))
 
     def switch_direction(self):
         """Switch direction in a CycleGAN model"""
