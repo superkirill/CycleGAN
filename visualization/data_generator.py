@@ -351,22 +351,22 @@ class DataGenerator(QtWidgets.QMainWindow):
         os.mkdir(path + '/trainB')
         if self.checkBox_add_triangles.checkState() == Qt.Checked:
             for i in range(t_train):
-                image = self.gen_triang(color=self.triangles_color, center=self.triangles_center)
+                image = self.gen_triang(color=tuple(list(self.triangles_color)[::-1]), center=self.triangles_center)
                 cv2.imwrite(path + "/trainA/t%d.jpg" % i, image)
                 cv2.imwrite(path + "/trainB/t%d.jpg" % i, cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
             for i in range(t_test):
-                image = self.gen_triang(color=self.triangles_color, center=self.triangles_center)
+                image = self.gen_triang(color=tuple(list(self.triangles_color)[::-1]), center=self.triangles_center)
                 cv2.imwrite(path + "/testA/t%d.jpg" % i, image)
                 cv2.imwrite(path + "/testB/t%d.jpg" % i, cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
         if self.checkBox_add_circles.checkState() == Qt.Checked:
             for i in range(c_train):
-                image = self.gen_circle(color=self.circles_color, center=self.circles_center)
-                cv2.imwrite(path + "/trainA/t%d.jpg" % i, image)
-                cv2.imwrite(path + "/trainB/t%d.jpg" % i, cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
+                image = self.gen_circle(color=tuple(list(self.circles_color)[::-1]), center=self.circles_center)
+                cv2.imwrite(path + "/trainA/c%d.jpg" % i, image)
+                cv2.imwrite(path + "/trainB/c%d.jpg" % i, cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
             for i in range(c_test):
-                image = self.gen_circle(color=self.circles_color, center=self.circles_center)
-                cv2.imwrite(path + "/testA/t%d.jpg" % i, image)
-                cv2.imwrite(path + "/testB/t%d.jpg" % i, cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
+                image = self.gen_circle(color=tuple(list(self.circles_color)[::-1]), center=self.circles_center)
+                cv2.imwrite(path + "/testA/c%d.jpg" % i, image)
+                cv2.imwrite(path + "/testB/c%d.jpg" % i, cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
 
     def draw(self):
         """Draw an example of the generated object in the QGraphicsView widget"""

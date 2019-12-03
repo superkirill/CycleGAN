@@ -7,21 +7,31 @@ from torchvision.transforms import transforms
 from . import parser, image_viewer
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
-from PyQt5.QtWidgets import QTreeWidgetItem
+from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox
+from PyQt5.QtCore import QEvent, QObject
+
+class EventFilter(QObject):
+    def __init__(self):
+        super(QObject, self).__init__()
+
+    def eventFilter(self, source, event):
+        if isinstance(source, image_viewer.ImageViewer):
+            if event.type() == QEvent.MouseButtonPress:
+                # print(event.pos())
+                pass
+        return False
 
 
 class Visualizer(QtWidgets.QMainWindow):
     """Visualization of the nn's layers responses"""
-    def __init__(self, model, framework="PyTorch", opt=None):
-        super(Visualizer, self).__init__()
+    def __init__(self, model, framework="PyTorch", opt=None, parent=None):
+        super(Visualizer, self).__init__(parent)
         # Save model
         self.model = model
         # Save framework
         self.framework = framework
         # Load user interface design
         uic.loadUi('visualization/design.ui', self)
-        # Save current direction for a CycleGANModel
-        self.direciton = "BtoA"
         # Load parser for a network model
         self.parser = parser.Parser(framework, model.netG_B.module)
         # Extract layers from the model
@@ -63,6 +73,9 @@ class Visualizer(QtWidgets.QMainWindow):
         # Load data
         self.load_data(self.data_path, self.tree_data)
         self.load_architecture(self.tree_network)
+
+        self.filter = EventFilter()
+        self.graphicsView_response.installEventFilter(self.filter)
 
     def print_layers(self):
         """Print layers of the model to the console
@@ -108,7 +121,10 @@ class Visualizer(QtWidgets.QMainWindow):
             # Concatenate the responses of all filters in one image
             for j in range(grid_size):
                 # Make a row of the image
-                row = response_on_cpu[j*grid_size]
+                if j * grid_size < response_on_cpu.shape[0]:
+                    row = response_on_cpu[j*grid_size]
+                else:
+                    break
                 for i in range(1,grid_size):
                     if i+j*grid_size < response_on_cpu.shape[0]:
                         row = np.concatenate((row, response_on_cpu[i+j*grid_size]), axis=1)
@@ -275,11 +291,13 @@ class Visualizer(QtWidgets.QMainWindow):
             # Convert to RGB or Gray scale
             if grayscale:
                 image = image.convert('L')
+                transform_list = [transforms.ToTensor(),
+                                  transforms.Normalize((0.5,), (0.5,))]
             else:
                 image = image.convert('RGB')
-            transform_list = [transforms.ToTensor(),
-                              transforms.Normalize((0.5, 0.5, 0.5),
-                              (0.5, 0.5, 0.5))]
+                transform_list = [transforms.ToTensor(),
+                                  transforms.Normalize((0.5, 0.5, 0.5),
+                                                       (0.5, 0.5, 0.5))]
             trans = transforms.Compose(transform_list)
             image = trans(image)
             self.input = image.unsqueeze(0)
@@ -290,22 +308,20 @@ class Visualizer(QtWidgets.QMainWindow):
     def switch_direction(self):
         """Switch direction in a CycleGAN model"""
         # Load parser for a network model
-        if self.direciton == "BtoA":
+        if self.opt.direction == 'BtoA':
             self.parser = parser.Parser(self.framework, self.model.netG_A.module)
             self.direction.setText("From A to B")
-            self.direciton = "AtoB"
+            self.opt.direction = 'AtoB'
         else:
             self.parser = parser.Parser(self.framework, self.model.netG_B.module)
             self.direction.setText("From B to A")
-            self.direciton = "BtoA"
+            self.opt.direction = 'BtoA'
         # Extract layers from the model
         self.layers = self.parser.get_layers()
         # If returned a UNet's layers with skip_connections
         if len(self.layers) == 2 and type(self.layers[0] is list):
             self.skip_connections = self.layers[1]
             self.layers = self.layers[0]
-        # Update responses
-        self.view_response(self.input, layer=self.current_layer)
 
     def get_item_path(self, item):
         """Get a full path to the object in the file system

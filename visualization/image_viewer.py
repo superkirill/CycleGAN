@@ -71,6 +71,29 @@ class ImageViewer(QtWidgets.QGraphicsView):
             self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
 
     def mousePressEvent(self, event):
-        if self._photo.isUnderMouse():
-            self.photoClicked.emit(self.mapToScene(event.pos()).toPoint())
-        super(ImageViewer, self).mousePressEvent(event)
+        if event.button() == QtCore.Qt.RightButton:
+            pos = event.pos()
+            image = self._photo.pixmap().toImage()
+            viewrect = self.viewport().rect()
+            scenerect = self.transform().mapRect(viewrect)
+            # image = visible_scene_rect
+
+
+            tl = QtCore.QPointF(self._horizontal_scroll, self._vertical_scroll)
+            br = tl + self.viewport().rect().bottomRight()
+            self.transform().mapRect(QtCore.QRectF(tl, br));
+
+
+            # image = image.scaled(self.width(), self.height())
+            color = image.pixelColor(pos)
+            print(color.rgb())
+            image.save("grab_scene.png")
+            QtWidgets.QToolTip.showText(event.globalPos(),
+                                        "RGB: (%d, %d, %d)" % (color.red(),
+                                                               color.green(),
+                                                               color.blue())
+                                        )
+        else:
+            if self._photo.isUnderMouse():
+                self.photoClicked.emit(self.mapToScene(event.pos()).toPoint())
+            super(ImageViewer, self).mousePressEvent(event)

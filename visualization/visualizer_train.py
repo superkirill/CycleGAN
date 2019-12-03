@@ -1,13 +1,15 @@
 import numpy as np
 import os
 import time
+import cv2
 from PIL import Image
 from torch import cat, nn
 from torch import device, cuda, Tensor
+from torchvision.transforms import transforms
 from . import parser, image_viewer
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
-from PyQt5.QtWidgets import QTreeWidgetItem
+from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox
 from PyQt5.QtCore import  QThread, QRunnable, pyqtSlot, QThreadPool, pyqtSignal, QObject
 from data import create_dataset
 
@@ -15,7 +17,8 @@ from data import create_dataset
 class Communicate(QObject):
 
     display_requested = pyqtSignal(np.ndarray, str, name="display")
-
+    random_requested = pyqtSignal(name="random")
+    fixed_requested = pyqtSignal(Tensor, str, name="fixed")
 
 class Training(QRunnable):
 
@@ -23,9 +26,24 @@ class Training(QRunnable):
         super(Training, self).__init__()
         self.app = app
         self.c = app.c
+        self.c.fixed_requested.connect(self.fixed_requested)
+        self.c.random_requested.connect(self.random_requested)
         self.interrupt_requested = False
         self.running = False
         self.stop_training = False
+        self.input_A2B = None
+        self.input_B2A = None
+        self.show_fixed = False
+
+    def fixed_requested(self, image, input_type):
+        if input_type == "A2B":
+            self.input_A2B = image
+        else:
+            self.input_B2A = image
+        self.show_fixed = True
+
+    def random_requested(self):
+        self.show_fixed = False
 
     def request_interrupt(self):
         self.interrupt_requested = True
@@ -63,20 +81,62 @@ class Training(QRunnable):
                 self.app.model.optimize_parameters()  # calculate loss functions, get gradients, update network weights
 
                 if self.app.total_iters % self.app.opt.display_freq == 0:  # display images
-                    if self.app.device.type == "cuda":
-                        imaA2B = self.app.view_response(self.app.model.real_A.cpu(), self.app.net["layersA2B"], self.app.net["skipA2B"],
-                                                        layer=self.app.current_layer_A2B)
-                        imaB2A = self.app.view_response(self.app.model.real_B.cpu(), self.app.net["layersB2A"], self.app.net["skipB2A"],
-                                                        layer=self.app.current_layer_B2A)
-                        imaA = self.app.model.real_A.cpu()
-                        imaB = self.app.model.real_B.cpu()
+                    if self.show_fixed is False:
+                        # Select images automatically
+                        if self.app.device.type == "cuda":
+                            imaA2B = self.app.view_response(self.app.model.real_A.cpu(), self.app.net["layersA2B"], self.app.net["skipA2B"],
+                                                            layer=self.app.current_layer_A2B)
+                            imaB2A = self.app.view_response(self.app.model.real_B.cpu(), self.app.net["layersB2A"], self.app.net["skipB2A"],
+                                                            layer=self.app.current_layer_B2A)
+                            imaA = self.app.model.real_A.cpu()
+                            imaB = self.app.model.real_B.cpu()
+                        else:
+                            imaA2B = self.app.view_response(self.app.model.real_A, self.app.net["layersA2B"], self.app.net["skipA2B"],
+                                                            layer=self.app.current_layer_A2B)
+                            imaB2A = self.app.view_response(self.app.model.real_A, self.app.net["layersB2A"], self.app.net["skipB2A"],
+                                                            layer=self.app.current_layer_B2A)
+                            imaA = self.app.model.real_A
+                            imaB = self.app.model.real_B
                     else:
-                        imaA2B = self.app.view_response(self.app.model.real_A, self.app.net["layersA2B"], self.app.net["skipA2B"],
-                                                        layer=self.app.current_layer_A2B)
-                        imaB2A = self.app.view_response(self.app.model.real_A, self.app.net["layersB2A"], self.app.net["skipB2A"],
-                                                        layer=self.app.current_layer_B2A)
-                        imaA = self.app.model.real_A
-                        imaB = self.app.model.real_B
+                        # Select images specified by the user
+                        # for the A2B network
+                        if self.input_A2B is not None:
+                            imaA2B = self.app.view_response(self.input_A2B, self.app.net["layersA2B"], self.app.net["skipA2B"],
+                                                            layer=self.app.current_layer_A2B)
+                            imaA = self.app.tensor2im(self.input_A2B)
+                            # If the batch size is 1,
+                            # show the image passing through the network at the current iteration
+                            if self.app.opt.batch_size == 1:
+                                real_A = self.app.tensor2im(data['A'])
+                                imaA[:32, :32] = cv2.resize(real_A, dsize=(32, 32),
+                                                            interpolation=cv2.INTER_CUBIC)[:32, :32]
+                                # Draw a border around the small image
+                                imaA[:32, 32] = 255
+                                imaA[32, :32] = 255
+                        else:
+                            # If the user has not chosen any image, show zeros
+                            imaA = np.zeros((256, 256))
+                            imaA2B = np.zeros((256, 256))
+                        # Select images specified by the user
+                        # for the B2A network
+                        if self.input_B2A is not None:
+                            imaB2A = self.app.view_response(self.input_B2A, self.app.net["layersB2A"], self.app.net["skipB2A"],
+                                                            layer=self.app.current_layer_B2A)
+                            imaB = self.app.tensor2im(self.input_B2A)
+                            # If the batch size is 1,
+                            # show the image passing through the network at the current iteration
+                            if self.app.opt.batch_size == 1:
+                                real_B = self.app.tensor2im(data['B'])
+                                imaB[:32, :32] = cv2.resize(real_B, dsize=(32, 32),
+                                                            interpolation=cv2.INTER_CUBIC)[:32, :32]
+                                # Draw a border around the small image
+                                imaB[:32, 32] = 255
+                                imaB[32, :32] = 255
+                        else:
+                            # If the user has not chosen any image, show zeros
+                            imaB = np.zeros((256, 256))
+                            imaB2A = np.zeros((256, 256))
+
                     self.c.display_requested.emit(self.app.tensor2im(imaA2B), "A2B")
                     self.c.display_requested.emit(self.app.tensor2im(imaB2A), "B2A")
                     self.c.display_requested.emit(self.app.tensor2im(imaA), "A")
@@ -100,6 +160,7 @@ class Training(QRunnable):
                 print('saving the model at the end of epoch %d, iters %d' % (epoch, self.app.total_iters))
                 self.app.model.save_networks('latest')
                 self.app.model.save_networks(epoch)
+            self.app.current_epoch.setText(str(epoch))
             #
             # print('End of epoch %d / %d \t Time Taken: %d sec' % (
             # epoch, opt.niter + opt.niter_decay, time.time() - epoch_start_time))
@@ -145,7 +206,7 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         # Dataset used for training
         self.dataset = create_dataset(self.opt)
         # Set path to the dataset
-        self.data_path = "C:/Users/Cecilia/Google Drive/IPCV/TRDP2/CycleGAN/Datasets"
+        self.data_path = "D:/Документы/University of Bordeaux/TRDP/Code/Datasets"
         # Replace standard PyQt5 QGraphicsView widgets
         # with ImageViewer widgets borrowed from
         # https://stackoverflow.com/questions/35508711/how-to-enable-pan-and-zoom-in-a-qgraphicsview
@@ -165,6 +226,9 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         self.graphicsView_response_B2A.deleteLater()
         self.graphicsView_response_B2A = image_viewer.ImageViewer(self)
         self.graphicsView_response_B2A.setGeometry(geom_old)
+        # Input data for Colorization
+        self.input_rgb = None
+        self.input_gray = None
         # Connect Qt signals and slots
         self.tree_network_A2B.itemClicked.connect(self.architectureA2B_clicked)
         self.tree_network_B2A.itemClicked.connect(self.architectureB2A_clicked)
@@ -174,6 +238,8 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         self.stop_training.pressed.connect(self.stop_training_clicked)
         self.n_epochs.editingFinished.connect(self.set_epochs)
         self.batch_size.editingFinished.connect(self.set_batch_size)
+        self.radioButton_random_selection.toggled.connect(self.set_random_selection)
+        self.radioButton_fixed_selection.toggled.connect(self.set_fixed_selection)
         # Load data
         self.load_data(self.data_path, self.tree_dataset)
         self.load_architecture(self.tree_network_A2B, self.net["layersA2B"])
@@ -183,6 +249,14 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         self.c = Communicate()
         self.c.display_requested.connect(self.display)
         self.training = Training(self)
+
+    def set_random_selection(self):
+        self.c.random_requested.emit()
+
+    def set_fixed_selection(self):
+        if not self.input_gray is None and not self.input_rgb is None:
+            self.c.fixed_requested.emit(self.input_rgb, "A2B")
+            self.c.fixed_requested.emit(self.input_gray, "B2A")
 
     def print_layers(self):
         """Print layers of the model to the console
@@ -237,7 +311,10 @@ class VisualizerTrain(QtWidgets.QMainWindow):
             # Concatenate the responses of all filters in one image
             for j in range(grid_size):
                 # Make a row of the image
-                row = response_on_cpu[j * grid_size]
+                if j * grid_size < response_on_cpu.shape[0]:
+                    row = response_on_cpu[j * grid_size]
+                else:
+                    break
                 for i in range(1, grid_size):
                     if i + j * grid_size < response_on_cpu.shape[0]:
                         row = np.concatenate((row, response_on_cpu[i + j * grid_size]), axis=1)
@@ -427,20 +504,53 @@ class VisualizerTrain(QtWidgets.QMainWindow):
             Parameters:
                 item - QTreeWidgetItem that is currently selected
         """
-        self.opt.dataroot = self.get_item_path(item)
-        self.dataset = create_dataset(self.opt)
-        self.model.set_input([data for _, data in enumerate(self.dataset)][0])
-        self.model.test()
-        if self.device.type == "cuda":
-            self.display(self.model.real_A.cpu(), window="A")
-            self.display(self.model.real_B.cpu(), window="B")
-            self.display(self.model.fake_B.cpu(), window="A2B")
-            self.display(self.model.fake_A.cpu(), window="B2A")
+        path = self.get_item_path(item)
+        if os.path.isdir(path):
+            try:
+                self.opt.dataroot = path
+                self.dataset = create_dataset(self.opt)
+                self.model.set_input([data for _, data in enumerate(self.dataset)][0])
+                self.model.test()
+            except:
+                QMessageBox.warning(None, "Dataset selection",
+                                    "A valid dataset root directory must contain the following directories:"
+                                    "trainA, trainB, testA, testB")
+                return
+            if self.device.type == "cuda":
+                self.display(self.model.real_A.cpu(), window="A")
+                self.display(self.model.real_B.cpu(), window="B")
+                self.display(self.model.fake_B.cpu(), window="A2B")
+                self.display(self.model.fake_A.cpu(), window="B2A")
+            else:
+                self.display(self.model.real_A, window="A")
+                self.display(self.model.real_B, window="B")
+                self.display(self.model.fake_B, window="A2B")
+                self.display(self.model.fake_A, window="B2A")
         else:
-            self.display(self.model.real_A, window="A")
-            self.display(self.model.real_B, window="B")
-            self.display(self.model.fake_B, window="A2B")
-            self.display(self.model.fake_A, window="B2A")
+            # Load image
+            image = Image.open(path)
+            # Resize the image
+            image = image.resize((self.opt.load_size, self.opt.load_size))
+            if "trainA" in path or "testA" in path:
+                # Convert to RGB
+                image = image.convert('RGB')
+                transform_list = [transforms.ToTensor(),
+                                  transforms.Normalize((0.5, 0.5, 0.5),
+                                                       (0.5, 0.5, 0.5))]
+                trans = transforms.Compose(transform_list)
+                image = trans(image)
+                self.input_rgb = image.unsqueeze(0)
+                self.c.fixed_requested.emit(self.input_rgb, "A2B")
+            elif "trainB" in path or "testB" in path:
+                # Convert to RGB or Gray scale
+                image = image.convert('L')
+                transform_list = [transforms.ToTensor(),
+                                  transforms.Normalize((0.5,), (0.5,))]
+                trans = transforms.Compose(transform_list)
+                image = trans(image)
+                self.input_gray = image.unsqueeze(0)
+                self.c.fixed_requested.emit(self.input_gray, "B2A")
+            self.radioButton_fixed_selection.setChecked(True)
 
     def start_training_clicked(self):
         if self.training.is_running() is False:
