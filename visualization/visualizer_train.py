@@ -1,6 +1,8 @@
 import numpy as np
 import os
 import time
+import matplotlib.pyplot as plt
+import seaborn as sns
 import cv2
 from PIL import Image
 from torch import cat, nn
@@ -12,7 +14,7 @@ from PyQt5.QtGui import QImage, QPixmap, QIcon
 from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox
 from PyQt5.QtCore import  QThread, QRunnable, pyqtSlot, QThreadPool, pyqtSignal, QObject
 from data import create_dataset
-
+from numpy import array
 
 class Communicate(QObject):
 
@@ -61,6 +63,14 @@ class Training(QRunnable):
     def run(self):
         self.running = True
         self.app.opt.display_freq = 1
+        loss_D_A = []
+        loss_G_A = []
+        loss_cycle_A = []
+        loss_D_B = []
+        loss_G_B = []
+        loss_cycle_B = []
+        iter_axis = [0]
+
         for epoch in range(self.app.opt.epoch_count,
                            self.app.opt.niter + self.app.opt.niter_decay + 1):  # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
             epoch_start_time = time.time()  # timer for entire epoch
@@ -143,12 +153,37 @@ class Training(QRunnable):
                     self.c.display_requested.emit(self.app.tensor2im(imaB), "B")
                     self.app.current_iteration.setText(str(epoch_iter))
 
-                if self.app.total_iters % self.app.opt.display_freq == 0:  # print training losses and save logging information to the disk
+
                     losses = self.app.model.get_current_losses()
-            #         t_comp = (time.time() - iter_start_time) / opt.batch_size
-            #         visualizer.print_current_losses(epoch, epoch_iter, losses, t_comp, t_data)
-            #         if opt.display_id > 0:
-            #             visualizer.plot_current_losses(epoch, float(epoch_iter) / dataset_size, losses)
+                    loss_D_A.append(losses['D_A'])
+                    loss_G_A.append(losses['G_A'])
+                    loss_cycle_A.append(losses['cycle_A'])
+                    loss_D_B.append(losses['D_B'])
+                    loss_G_B.append(losses['G_B'])
+                    loss_cycle_B.append(losses['cycle_B'])
+                    iter_axis.append(iter_axis[-1] + 1)
+                    fig_losses = plt.figure()
+                    plot = fig_losses.add_subplot(111)
+                    plt.tight_layout()
+                    plot.plot(iter_axis[1:], loss_D_A, 'r', label='D_A')
+                    plot.plot(iter_axis[1:], loss_G_A, 'm-.', label='G_A')
+                    plot.plot(iter_axis[1:], loss_cycle_A, 'y--', label='Cycle_A')
+                    plot.plot(iter_axis[1:], loss_D_B, 'b', label='D_B')
+                    plot.plot(iter_axis[1:], loss_G_B, 'g-.', label='G_B')
+                    plot.plot(iter_axis[1:], loss_cycle_B, 'c--', label='Cycle_B')
+                    # plot.axis([1, self.app.dataset.dataset.A_size, 1, 13])
+                    # plot.xlabel('Iterations')
+                    # plot.ylabel('Loss values')
+                    plot.legend()
+                    #plt.show()
+
+                    fig_losses.canvas.draw()
+
+                    data = np.fromstring(fig_losses.canvas.tostring_rgb(), dtype=np.uint8)
+                    data = data.reshape(fig_losses.canvas.get_width_height()[::-1] + (3,))
+                    self.c.display_requested.emit(data, "losses")
+
+
             #
             #     if total_iters % opt.save_latest_freq == 0:  # cache our latest model every <save_latest_freq> iterations
             #         print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
@@ -176,6 +211,8 @@ class VisualizerTrain(QtWidgets.QMainWindow):
 
     def __init__(self, model, framework="PyTorch", opt=None):
         super(VisualizerTrain, self).__init__()
+        # Set the tool seaborn for plotting
+        sns.set()
         # Save model
         self.model = model
         # Save framework
@@ -229,6 +266,10 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         # Input data for Colorization
         self.input_rgb = None
         self.input_gray = None
+        geom_old = self.graphicsView_losses.geometry()
+        self.graphicsView_losses.deleteLater()
+        self.graphicsView_losses = image_viewer.ImageViewer(self)
+        self.graphicsView_losses.setGeometry(geom_old)
         # Connect Qt signals and slots
         self.tree_network_A2B.itemClicked.connect(self.architectureA2B_clicked)
         self.tree_network_B2A.itemClicked.connect(self.architectureB2A_clicked)
@@ -403,8 +444,12 @@ class VisualizerTrain(QtWidgets.QMainWindow):
             view = self.graphicsView_datasetB
         elif window == "A2B":
             view = self.graphicsView_response_A2B
-        else:
+        elif window == "B2A":
             view = self.graphicsView_response_B2A
+        elif window == "losses":
+            view = self.graphicsView_losses
+        else:
+            pass
         qt_image = QImage(image.tobytes(), width, height, bytes_per_line, format)
         view.setPhoto(QPixmap(qt_image))
 
@@ -598,4 +643,3 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         else:
             path = self.data_path + "/" + path
         return path
-
