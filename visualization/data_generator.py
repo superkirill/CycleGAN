@@ -264,7 +264,7 @@ class DataGenerator(QtWidgets.QMainWindow):
 
             Parameters:
                 canvas - a tuple (w,h), representing the size of the image
-                color - a tuple (R, G, B), representing the color of the triangle
+                color - a tuple (B, G, R), representing the color of the triangle
                 center - boolean, indicating whether the triangle is to be positioned
                     in the center of the image
             Return value:
@@ -290,7 +290,7 @@ class DataGenerator(QtWidgets.QMainWindow):
 
             Parameters:
                 canvas - a tuple (w,h), representing the size of the image
-                color - a tuple (R, G, B), representing the color of the circle
+                color - a tuple (B, G, R), representing the color of the circle
                 center - boolean, indicating whether the circle is to be positioned
                     in the center of the image
             Return value:

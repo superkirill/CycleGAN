@@ -7,11 +7,11 @@
     <x>0</x>
     <y>0</y>
     <width>1362</width>
-    <height>840</height>
+    <height>834</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Neural network visualization</string>
+   <string>Test visualization</string>
   </property>
   <property name="locale">
    <locale language="English" country="UnitedStates"/>
@@ -150,7 +150,7 @@
     </property>
     <column>
      <property name="text">
-      <string notr="true">1</string>
+      <string notr="true">Dataset</string>
      </property>
     </column>
    </widget>
@@ -243,7 +243,7 @@
      <rect>
       <x>670</x>
       <y>670</y>
-      <width>121</width>
+      <width>151</width>
       <height>51</height>
      </rect>
     </property>
@@ -254,24 +254,6 @@
      <string>Change direction</string>
     </property>
    </widget>
-  </widget>
-  <widget class="QMenuBar" name="menubar">
-   <property name="geometry">
-    <rect>
-     <x>0</x>
-     <y>0</y>
-     <width>1362</width>
-     <height>26</height>
-    </rect>
-   </property>
-   <widget class="QMenu" name="menu_network">
-    <property name="title">
-     <string>Network</string>
-    </property>
-    <addaction name="load_dataset"/>
-    <addaction name="load_model"/>
-   </widget>
-   <addaction name="menu_network"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="load_dataset">

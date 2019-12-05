@@ -1,6 +1,7 @@
 from models import networks
 from torch import nn
 
+
 class PyTorchParser():
     """Extract separate layers from PyTorch nn"""
     def __init__(self, model):

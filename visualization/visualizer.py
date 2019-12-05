@@ -8,18 +8,6 @@ from . import parser, image_viewer
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
 from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox
-from PyQt5.QtCore import QEvent, QObject
-
-class EventFilter(QObject):
-    def __init__(self):
-        super(QObject, self).__init__()
-
-    def eventFilter(self, source, event):
-        if isinstance(source, image_viewer.ImageViewer):
-            if event.type() == QEvent.MouseButtonPress:
-                # print(event.pos())
-                pass
-        return False
 
 
 class Visualizer(QtWidgets.QMainWindow):
@@ -73,9 +61,6 @@ class Visualizer(QtWidgets.QMainWindow):
         # Load data
         self.load_data(self.data_path, self.tree_data)
         self.load_architecture(self.tree_network)
-
-        self.filter = EventFilter()
-        self.graphicsView_response.installEventFilter(self.filter)
 
     def print_layers(self):
         """Print layers of the model to the console
@@ -149,6 +134,8 @@ class Visualizer(QtWidgets.QMainWindow):
                 data -- input data
                 layer -- non-negative integer representing the number of a layer
                         a response of which is to be viewed
+                is_top_level_call -- a boolean representing if a current call
+                        is a top level or a recursive call
 
             Return value:
                 torch.tensor -- response of the given layer

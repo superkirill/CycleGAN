@@ -12,15 +12,22 @@ from . import parser, image_viewer
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
 from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox
-from PyQt5.QtCore import  QThread, QRunnable, pyqtSlot, QThreadPool, pyqtSignal, QObject
+from PyQt5.QtCore import QRunnable, pyqtSlot, QThreadPool, pyqtSignal, QObject
 from data import create_dataset
-from numpy import array
+
 
 class Communicate(QObject):
-
+    """Implement communication between classes"""
+    # Signal requesting a redraw of the QGraphicsView
+    # with the contents of the np.ndarray
     display_requested = pyqtSignal(np.ndarray, str, name="display")
+    # Signal requesting random selection of
+    # data for visualization
     random_requested = pyqtSignal(name="random")
+    # Signal requesting fixed data for visualization
+    # that is given in the Tensor
     fixed_requested = pyqtSignal(Tensor, str, name="fixed")
+
 
 class Training(QRunnable):
 
@@ -63,6 +70,7 @@ class Training(QRunnable):
     def run(self):
         self.running = True
         self.app.opt.display_freq = 1
+        # Initialize lists storing training losses
         loss_D_A = []
         loss_G_A = []
         loss_cycle_A = []
@@ -70,21 +78,23 @@ class Training(QRunnable):
         loss_G_B = []
         loss_cycle_B = []
         iter_axis = [0]
-
+        # Display initial learning rate
+        self.app.current_learning_rate.setText("%.2e" % self.app.model.optimizers[0].param_groups[0]['lr'])
+        # Outer loop for different epochs
+        # Save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
         for epoch in range(self.app.opt.epoch_count,
-                           self.app.opt.niter + self.app.opt.niter_decay + 1):  # outer loop for different epochs; we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>
+                           self.app.opt.niter + self.app.opt.niter_decay + 1):
             epoch_start_time = time.time()  # timer for entire epoch
-            iter_data_time = time.time()  # timer for data loading per iteration
-            epoch_iter = 0  # the number of training iterations in current epoch, reset to 0 every epoch
+            epoch_iter = 0  # the number of training iterations in current epoch
             # self.app.opt.display_freq = 1
             for i, data in enumerate(self.app.dataset):  # inner loop within one epoch
+                # Pause the training process if the pause button in the GUI was pressed
                 while self.interrupt_requested is True:
                     pass
+                # Stop the training process if the stop button in the GUI was pressed
                 if self.stop_training is True:
                     break
-                iter_start_time = time.time()  # timer for computation per iteration
-                if self.app.total_iters % self.app.opt.print_freq == 0:
-                    t_data = iter_start_time - iter_data_time
+                # Update the number of iterations
                 self.app.total_iters += self.app.opt.batch_size
                 epoch_iter += self.app.opt.batch_size
                 self.app.model.set_input(data)  # unpack data from dataset and self.apply preprocessing
@@ -147,13 +157,14 @@ class Training(QRunnable):
                             imaB = np.zeros((256, 256))
                             imaB2A = np.zeros((256, 256))
 
+                    # Request the redraw of graphics widgets
                     self.c.display_requested.emit(self.app.tensor2im(imaA2B), "A2B")
                     self.c.display_requested.emit(self.app.tensor2im(imaB2A), "B2A")
                     self.c.display_requested.emit(self.app.tensor2im(imaA), "A")
                     self.c.display_requested.emit(self.app.tensor2im(imaB), "B")
                     self.app.current_iteration.setText(str(epoch_iter))
 
-
+                    # Compute the losses
                     losses = self.app.model.get_current_losses()
                     loss_D_A.append(losses['D_A'])
                     loss_G_A.append(losses['G_A'])
@@ -162,8 +173,12 @@ class Training(QRunnable):
                     loss_G_B.append(losses['G_B'])
                     loss_cycle_B.append(losses['cycle_B'])
                     iter_axis.append(iter_axis[-1] + 1)
-                    fig_losses = plt.figure()
+
+                    # Create a figure
+                    fig_losses = plt.figure(figsize=(8, 6), dpi=200)
                     plot = fig_losses.add_subplot(111)
+
+                    # Plot the losses on the figure
                     plt.tight_layout()
                     plot.plot(iter_axis[1:], loss_D_A, 'r', label='D_A')
                     plot.plot(iter_axis[1:], loss_G_A, 'm-.', label='G_A')
@@ -171,37 +186,38 @@ class Training(QRunnable):
                     plot.plot(iter_axis[1:], loss_D_B, 'b', label='D_B')
                     plot.plot(iter_axis[1:], loss_G_B, 'g-.', label='G_B')
                     plot.plot(iter_axis[1:], loss_cycle_B, 'c--', label='Cycle_B')
-                    # plot.axis([1, self.app.dataset.dataset.A_size, 1, 13])
-                    # plot.xlabel('Iterations')
-                    # plot.ylabel('Loss values')
                     plot.legend()
-                    #plt.show()
 
+                    # Convert the figure to a np.ndarray
                     fig_losses.canvas.draw()
-
                     data = np.fromstring(fig_losses.canvas.tostring_rgb(), dtype=np.uint8)
                     data = data.reshape(fig_losses.canvas.get_width_height()[::-1] + (3,))
+
+                    # Request the redraw of the graphics widget
                     self.c.display_requested.emit(data, "losses")
 
+                    # Close the figure
+                    plt.close(fig=fig_losses)
 
-            #
-            #     if total_iters % opt.save_latest_freq == 0:  # cache our latest model every <save_latest_freq> iterations
-            #         print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
-            #         save_suffix = 'iter_%d' % total_iters if opt.save_by_iter else 'latest'
-            #         model.save_networks(save_suffix)
-            #
-            #     iter_data_time = time.time()
-            if epoch % self.app.opt.save_epoch_freq == 0:  # cache our model every <save_epoch_freq> epochs
+            if epoch % self.app.opt.save_epoch_freq == 0:  # cache the model every <save_epoch_freq> epochs
                 print('saving the model at the end of epoch %d, iters %d' % (epoch, self.app.total_iters))
                 self.app.model.save_networks('latest')
                 self.app.model.save_networks(epoch)
+
+            # Update the number of the current epoch in the GUI
             self.app.current_epoch.setText(str(epoch))
-            #
-            # print('End of epoch %d / %d \t Time Taken: %d sec' % (
-            # epoch, opt.niter + opt.niter_decay, time.time() - epoch_start_time))
-            # model.update_learning_rate()  # update learning rates at the end of every epoch.
+
+            print('End of epoch %d / %d \t Time Taken: %d sec' % (
+                epoch, self.app.opt.niter + self.app.opt.niter_decay, time.time() - epoch_start_time))
+
+            # Update the learning rate at the end of every epoch.
+            self.app.model.update_learning_rate()
+            # Update the learning rate in the GUI
+            self.app.current_learning_rate.setText("%.2e" % self.app.model.optimizers[0].param_groups[0]['lr'])
+            # Stop the training process if the stop button was pressed in the GUI
             if self.stop_training is True:
                 break
+        # Update the state of the process
         self.running = False
         self.stop_training = False
 
@@ -292,19 +308,21 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         self.training = Training(self)
 
     def set_random_selection(self):
+        """Handle a mouse click on the QRadioButton by setting
+            the mode of data selection for visualization
+        """
         self.c.random_requested.emit()
 
     def set_fixed_selection(self):
+        """Handle a mouse click on the QRadioButton by setting
+            the mode of data selection for visualization
+        """
         if not self.input_gray is None and not self.input_rgb is None:
             self.c.fixed_requested.emit(self.input_rgb, "A2B")
             self.c.fixed_requested.emit(self.input_gray, "B2A")
 
     def print_layers(self):
-        """Print layers of the model to the console
-
-            Parameters:
-                ---
-        """
+        """Print layers of the model to the console"""
         print("\n\nNumber of layers: %d" % len(self.net["layersA2B"]))
         for i in range(len(self.net["layersA2B"])):
             print("\t %d:" % i, self.net["layersA2B"][i])
@@ -327,8 +345,10 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         """Display the response of a certain layer to the input data
 
             Parameters:
-                data -- input data of the network
-                layer -- non-negative integer representing the number of a layer
+                data - input data of the network
+                net - model of the network
+                skip_connections - a list containing unet's skip-connections
+                layer - non-negative integer representing the number of a layer
                         a response of which is to be viewed
         """
         # Copy data to the gpu for faster forward propagation
@@ -379,12 +399,17 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         """Run forwrard propagation until the specified layer
 
             Parameters:
-                data -- input data
-                layer -- non-negative integer representing the number of a layer
+                data - input data
+                net - model of the neural network
+                skip_connections - indices of the layers connected by the unet
+                        skip-connections
+                layer - non-negative integer representing the number of a layer
                         a response of which is to be viewed
+                is_top_level_call - a boolean representing if a current call
+                        is a top level or a recursive call
 
             Return value:
-                torch.tensor -- response of the given layer
+                torch.tensor - response of the given layer
         """
         target_layer = net[layer]
         if layer in list(zip(*skip_connections))[1]:
@@ -404,9 +429,12 @@ class VisualizerTrain(QtWidgets.QMainWindow):
     def tensor2im(self, input_image, imtype=np.uint8):
         """"Converts a Tensor array into a numpy image array.
 
-        Parameters:
-            input_image (tensor) --  the input image tensor array
-            imtype (type)        --  the desired type of the converted numpy array
+            Parameters:
+                input_image (tensor) -  the input image tensor array
+                imtype (type)        -  the desired type of the converted numpy array
+
+            Return:
+                np.ndarray object representing the image
         """
         if not isinstance(input_image, np.ndarray):
             if isinstance(input_image, Tensor):  # get the data from a variable
@@ -426,8 +454,8 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         """Display an image represented as a tensor
 
             Parameters:
-                data -- input tensor or np.array representing an image
-                window -- a window in which the image will be displayed
+                data - input tensor or np.array representing an image
+                window - a window in which the image will be displayed
         """
         image = self.tensor2im(data)
         if len(image.shape) > 2:
@@ -458,6 +486,7 @@ class VisualizerTrain(QtWidgets.QMainWindow):
 
             Parameters:
                 tree - QTreeWidget in which the architecture is displayed
+                net - model of the network
         """
         tree.setHeaderLabel("Layer")
         for index, layer in enumerate(net):
@@ -549,8 +578,11 @@ class VisualizerTrain(QtWidgets.QMainWindow):
             Parameters:
                 item - QTreeWidgetItem that is currently selected
         """
+        # Get a path to the item
         path = self.get_item_path(item)
+        # If the item is a directory
         if os.path.isdir(path):
+            # Try to open a dataset located in the directory
             try:
                 self.opt.dataroot = path
                 self.dataset = create_dataset(self.opt)
@@ -561,6 +593,7 @@ class VisualizerTrain(QtWidgets.QMainWindow):
                                     "A valid dataset root directory must contain the following directories:"
                                     "trainA, trainB, testA, testB")
                 return
+            # And refresh the graphics widgets
             if self.device.type == "cuda":
                 self.display(self.model.real_A.cpu(), window="A")
                 self.display(self.model.real_B.cpu(), window="B")
@@ -571,61 +604,92 @@ class VisualizerTrain(QtWidgets.QMainWindow):
                 self.display(self.model.real_B, window="B")
                 self.display(self.model.fake_B, window="A2B")
                 self.display(self.model.fake_A, window="B2A")
+        # If the item is not a directory
         else:
-            # Load image
+            # Load an image
             image = Image.open(path)
             # Resize the image
             image = image.resize((self.opt.load_size, self.opt.load_size))
+            # If the image is from the domain A
             if "trainA" in path or "testA" in path:
                 # Convert to RGB
                 image = image.convert('RGB')
+                # Convert to tensor and normalize
                 transform_list = [transforms.ToTensor(),
                                   transforms.Normalize((0.5, 0.5, 0.5),
                                                        (0.5, 0.5, 0.5))]
                 trans = transforms.Compose(transform_list)
                 image = trans(image)
+                # Save as input
                 self.input_rgb = image.unsqueeze(0)
+                # Request an update of input in the training process
                 self.c.fixed_requested.emit(self.input_rgb, "A2B")
+            # If the image is from the domain B
             elif "trainB" in path or "testB" in path:
-                # Convert to RGB or Gray scale
+                # Convert grayscale
                 image = image.convert('L')
+                # Convert to tensor and normalize
                 transform_list = [transforms.ToTensor(),
                                   transforms.Normalize((0.5,), (0.5,))]
                 trans = transforms.Compose(transform_list)
                 image = trans(image)
+                # Save as input
                 self.input_gray = image.unsqueeze(0)
+                # Request an update of input in the training process
                 self.c.fixed_requested.emit(self.input_gray, "B2A")
             self.radioButton_fixed_selection.setChecked(True)
 
     def start_training_clicked(self):
+        """Handle a mouse click on the QPushButton
+            by starting the training process
+        """
         if self.training.is_running() is False:
+            # Read and update the parameters
             self.set_epochs()
             self.set_batch_size()
+            # Create a training process
             self.threadpool.clear()
             self.training = Training(self)
+            # Run the training process
             self.threadpool.start(self.training)
         else:
+            # If training was previously stopped
+            # then resume it
             self.training.release_interrupt()
         self.pause_training.setEnabled(True)
         self.stop_training.setEnabled(True)
         self.start_training.setEnabled(False)
 
     def pause_training_clicked(self):
+        """Handle a mouse click on the QPushButton
+            by pausing the training process
+        """
         self.training.request_interrupt()
         self.start_training.setEnabled(True)
         self.stop_training.setEnabled(True)
         self.pause_training.setEnabled(False)
 
     def stop_training_clicked(self):
+        """Handle a mouse click on the QPushButton
+            by stopping the training process
+        """
         self.training.stop()
         self.start_training.setEnabled(True)
         self.stop_training.setEnabled(False)
         self.pause_training.setEnabled(False)
 
     def set_epochs(self):
+        """Read the contents of the QLineEdit containing
+            the number of training epochs and update the
+            corresponding field
+        """
         self.opt.niter = int(self.n_epochs.text())
 
     def set_batch_size(self):
+        """Read the contents of the QLineEdit containing
+            the batch size epochs and update the
+            corresponding field
+        """
         self.opt.batch_size = int(self.batch_size.text())
 
     def get_item_path(self, item):

@@ -7,11 +7,11 @@
     <x>0</x>
     <y>0</y>
     <width>1362</width>
-    <height>840</height>
+    <height>753</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Neural network visualization</string>
+   <string>Training visualization</string>
   </property>
   <property name="locale">
    <locale language="English" country="UnitedStates"/>
@@ -72,9 +72,9 @@
     <property name="geometry">
      <rect>
       <x>1080</x>
-      <y>10</y>
-      <width>211</width>
-      <height>241</height>
+      <y>20</y>
+      <width>261</width>
+      <height>251</height>
      </rect>
     </property>
     <property name="sizePolicy">
@@ -104,11 +104,20 @@
    <widget class="QTreeWidget" name="tree_dataset">
     <property name="geometry">
      <rect>
-      <x>520</x>
+      <x>500</x>
       <y>550</y>
       <width>211</width>
-      <height>241</height>
+      <height>171</height>
      </rect>
+    </property>
+    <property name="horizontalScrollBarPolicy">
+     <enum>Qt::ScrollBarAlwaysOn</enum>
+    </property>
+    <property name="sizeAdjustPolicy">
+     <enum>QAbstractScrollArea::AdjustToContents</enum>
+    </property>
+    <property name="wordWrap">
+     <bool>true</bool>
     </property>
     <column>
      <property name="text">
@@ -172,7 +181,7 @@
      <rect>
       <x>40</x>
       <y>60</y>
-      <width>191</width>
+      <width>211</width>
       <height>31</height>
      </rect>
     </property>
@@ -214,7 +223,7 @@
    <widget class="QLineEdit" name="n_epochs">
     <property name="geometry">
      <rect>
-      <x>240</x>
+      <x>260</x>
       <y>70</y>
       <width>113</width>
       <height>20</height>
@@ -224,7 +233,7 @@
      <string>00000</string>
     </property>
     <property name="text">
-     <string>1</string>
+     <string>200</string>
     </property>
     <property name="placeholderText">
      <string># of epochs</string>
@@ -233,7 +242,7 @@
    <widget class="QLineEdit" name="batch_size">
     <property name="geometry">
      <rect>
-      <x>240</x>
+      <x>260</x>
       <y>100</y>
       <width>113</width>
       <height>20</height>
@@ -314,7 +323,7 @@
      <rect>
       <x>40</x>
       <y>20</y>
-      <width>191</width>
+      <width>221</width>
       <height>31</height>
      </rect>
     </property>
@@ -478,9 +487,9 @@
    <widget class="QPushButton" name="create_dataset">
     <property name="geometry">
      <rect>
-      <x>60</x>
+      <x>40</x>
       <y>330</y>
-      <width>171</width>
+      <width>231</width>
       <height>31</height>
      </rect>
     </property>
@@ -504,9 +513,9 @@
     <property name="geometry">
      <rect>
       <x>1080</x>
-      <y>270</y>
-      <width>211</width>
-      <height>241</height>
+      <y>290</y>
+      <width>261</width>
+      <height>251</height>
      </rect>
     </property>
     <property name="sizePolicy">
@@ -560,7 +569,7 @@
      <rect>
       <x>260</x>
       <y>280</y>
-      <width>51</width>
+      <width>151</width>
       <height>31</height>
      </rect>
     </property>
@@ -593,8 +602,8 @@
    <widget class="QGroupBox" name="groupBox">
     <property name="geometry">
      <rect>
-      <x>800</x>
-      <y>570</y>
+      <x>740</x>
+      <y>580</y>
       <width>381</width>
       <height>111</height>
      </rect>
@@ -654,24 +663,6 @@
      </property>
     </widget>
    </widget>
-  </widget>
-  <widget class="QMenuBar" name="menubar">
-   <property name="geometry">
-    <rect>
-     <x>0</x>
-     <y>0</y>
-     <width>1362</width>
-     <height>26</height>
-    </rect>
-   </property>
-   <widget class="QMenu" name="menu_network">
-    <property name="title">
-     <string>Network</string>
-    </property>
-    <addaction name="load_dataset"/>
-    <addaction name="load_model"/>
-   </widget>
-   <addaction name="menu_network"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="load_dataset">
