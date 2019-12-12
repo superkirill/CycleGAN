@@ -5,3 +5,5 @@ visdom>=0.1.8.3
 opencv-python
 numpy
 PyQt5
+seaborn
+matplotlib

@@ -52,7 +52,7 @@ class PyTorchParser():
                 for i in range(len(layers)):
                     if type(layers[i]) is int:
                         marker = layers[i]
-                        connection_from = layer_counter
+                        connection_from = layer_counter - 1
                         for j in range (i+1, len(layers)):
                             if type(layers[j]) is int:
                                 if layers[j] == marker:

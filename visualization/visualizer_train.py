@@ -12,21 +12,9 @@ from . import parser, image_viewer
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
 from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox
-from PyQt5.QtCore import QRunnable, pyqtSlot, QThreadPool, pyqtSignal, QObject
+from PyQt5.QtCore import QRunnable, pyqtSlot, QThreadPool
 from data import create_dataset
-
-
-class Communicate(QObject):
-    """Implement communication between classes"""
-    # Signal requesting a redraw of the QGraphicsView
-    # with the contents of the np.ndarray
-    display_requested = pyqtSignal(np.ndarray, str, name="display")
-    # Signal requesting random selection of
-    # data for visualization
-    random_requested = pyqtSignal(name="random")
-    # Signal requesting fixed data for visualization
-    # that is given in the Tensor
-    fixed_requested = pyqtSignal(Tensor, str, name="fixed")
+from .communicate import Communicate
 
 
 class Training(QRunnable):
@@ -259,7 +247,7 @@ class VisualizerTrain(QtWidgets.QMainWindow):
         # Dataset used for training
         self.dataset = create_dataset(self.opt)
         # Set path to the dataset
-        self.data_path = "D:/Документы/University of Bordeaux/TRDP/Code/Datasets"
+        self.data_path = self.opt.dataroot
         # Replace standard PyQt5 QGraphicsView widgets
         # with ImageViewer widgets borrowed from
         # https://stackoverflow.com/questions/35508711/how-to-enable-pan-and-zoom-in-a-qgraphicsview

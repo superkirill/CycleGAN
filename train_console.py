@@ -50,7 +50,7 @@ def compute_losses(cycle_model, opt):
 if __name__ == '__main__':
     sns.set()
     opt = TrainOptions().parse()   # get training options
-    opt.name = "unet_128"
+    opt.name = "unet_128_dataset_300t_300c"
     opt.netG = "unet_128"
     opt.direction = "AtoB"
     opt.lambda_identity = 0.0

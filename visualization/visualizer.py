@@ -1,25 +1,34 @@
 import numpy as np
 import os
+import seaborn as sns
+import matplotlib.pyplot as plt
 from PIL import Image
-from torch import cat, nn
+from torch import cat, nn, rand, ones
 from torch import device, cuda, Tensor
 from torchvision.transforms import transforms
 from . import parser, image_viewer
 from PyQt5 import QtWidgets, uic
 from PyQt5.QtGui import QImage, QPixmap, QIcon
 from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox
+from .communicate import Communicate
 
 
 class Visualizer(QtWidgets.QMainWindow):
     """Visualization of the nn's layers responses"""
     def __init__(self, model, framework="PyTorch", opt=None, parent=None):
         super(Visualizer, self).__init__(parent)
+        # Load sns extension for matplotlib
+        sns.set()
+        # Disable interactive mode of matplotlib
+        plt.ioff()
         # Save model
         self.model = model
         # Save framework
         self.framework = framework
         # Load user interface design
         uic.loadUi('visualization/design.ui', self)
+        # Set image import options
+        self.opt = opt
         # Load parser for a network model
         self.parser = parser.Parser(framework, model.netG_B.module)
         # Extract layers from the model
@@ -28,27 +37,34 @@ class Visualizer(QtWidgets.QMainWindow):
         if len(self.layers) == 2 and type(self.layers[0] is list):
             self.skip_connections = self.layers[1]
             self.layers = self.layers[0]
-        # Set image import options
-        self.opt = opt
         # Detect system's processing device
         self.device = device("cuda" if cuda.is_available() else "cpu")
+        # Mask for the layers (new_values of the filter responses)
+        self.masks = None
         # Set input data for the network
         self.input = None
         # Set the number of layer the response of which is being displayed
-        self.current_layer = 0
+        self.current_layer = 1
         # Set path to the dataset
-        self.data_path = "D:/Документы/University of Bordeaux/TRDP/Code/Datasets"
+        self.data_path = "D:/Документы/University of Bordeaux/TRDP/Code/Datasets/Colorization_mini"
+        # self.data_path = "D:/Документы/University of Bordeaux/TRDP/Code/Datasets"
+        # Load the communicator class
+        self.c = Communicate()
         # Replace standard PyQt5 QGraphicsView widgets
         # with ImageViewer widgets borrowed from
         # https://stackoverflow.com/questions/35508711/how-to-enable-pan-and-zoom-in-a-qgraphicsview
         geom_old = self.graphicsView_response.geometry()
         self.graphicsView_response.deleteLater()
-        self.graphicsView_response = image_viewer.ImageViewer(self)
+        self.graphicsView_response = image_viewer.ImageViewer(self, communicator=self.c)
         self.graphicsView_response.setGeometry(geom_old)
         geom_old = self.graphicsView_original.geometry()
         self.graphicsView_original.deleteLater()
         self.graphicsView_original = image_viewer.ImageViewer(self)
         self.graphicsView_original.setGeometry(geom_old)
+        geom_old = self.graphicsView_output.geometry()
+        self.graphicsView_output.deleteLater()
+        self.graphicsView_output = image_viewer.ImageViewer(self)
+        self.graphicsView_output.setGeometry(geom_old)
         # Set some layout parameters
         self.button_change_direction.setIcon(QIcon("visualization/change_direction.png"))
         self.model_name.setText(str(self.model.model_names))
@@ -61,6 +77,87 @@ class Visualizer(QtWidgets.QMainWindow):
         # Load data
         self.load_data(self.data_path, self.tree_data)
         self.load_architecture(self.tree_network)
+        self.clear_masks.clicked.connect(self.reset_masks)
+        self.c.graphics_clicked.connect(self.update_response_at)
+        self.c.supress_whole_layer.connect(self.supress_layer)
+
+    def supress_layer(self):
+        """Set all filter in the current layer to zeros (while under
+            development, later the value will be read from the QLineEdit)"""
+        self.masks[self.opt.direction][self.current_layer][0][:] = 0.0
+        self.view_response(self.input, layer=self.current_layer, win="middle")
+        self.view_response(self.input, layer=len(self.layers) - 1, win="right")
+
+    def reset_masks(self):
+        """Set all masks to ones"""
+        if isinstance(self.masks, dict):
+            for index, mask in enumerate(self.masks['AtoB']):
+                self.masks['AtoB'][index] = ones(self.masks['AtoB'][index].shape)
+            for index, mask in enumerate(self.masks['BtoA']):
+                self.masks['BtoA'][index] = ones(self.masks['BtoA'][index].shape)
+        # Refresh the images
+        self.view_response(self.input, layer=self.current_layer)
+        self.view_response(self.input, layer=len(self.layers) - 1, win="right")
+
+    def make_mask(self, net):
+        """Create empty masks (filled with ones) for a network
+
+            Parameters:
+                net - a list of neural network layers and skip-connections
+            Return value:
+                a list of masks for all layers of the network
+        """
+        if self.opt.direction == "BtoA":
+            x = rand(1, self.opt.output_nc, self.opt.load_size, self.opt.load_size).to(self.device)
+        else:
+            x = rand(1, self.opt.input_nc, self.opt.load_size, self.opt.load_size).to(self.device)
+        masks = []
+        for index, layer in enumerate(net):
+            _, size = self.forward(x, index, is_top_level_call=True)
+            mask = ones(1, size[1], size[2], size[3])
+            masks.append(mask)
+        return masks
+
+    def update_response_at(self, pos):
+        """Identify the filter that was clicked and change its mask
+            value to zeros (while under development, later the value
+            will be read from the QLineEdit)
+
+            Parameters:
+                pos - QPoint position of the mouse cursor the clicked
+                    a QGraphicsView object
+        """
+        mask = self.masks[self.opt.direction][self.current_layer]
+        # Find the corresponding filter
+        # Current cell borders
+        top_bound = -mask.shape[2]
+        bottom_bound = 0
+        grid_size = int(np.floor(np.sqrt(mask.shape[1])))
+        grid_size = grid_size + 1 if (grid_size ** 2 != mask.shape[1]) else grid_size
+        x = pos.x() * ((grid_size * mask.shape[2]) / 512)
+        y = pos.y() * ((grid_size * mask.shape[3]) / 512)
+        print(x, y)
+        for j in range(grid_size):
+            # Iterate through the rows of the grid
+            if j * grid_size >= mask.shape[1]:
+                break
+            left_bound = -mask.shape[2]
+            right_bound = 0
+            top_bound += mask.shape[2]
+            bottom_bound += mask.shape[2]
+            # Iterate through the columns of the grid
+            for i in range(0, grid_size):
+                if i + j * grid_size <= mask.shape[1]:
+                    right_bound += mask.shape[3]
+                    left_bound += mask.shape[3]
+                if left_bound <= x <= right_bound:
+                    if top_bound <= y <= bottom_bound:
+                        print(left_bound, right_bound, top_bound, bottom_bound)
+                        mask[0][i + j * grid_size][:] = 0
+                        self.masks[self.opt.direction][self.current_layer] = mask
+                        self.view_response(self.input, layer=self.current_layer, win="middle")
+                        self.view_response(self.input, layer=len(self.layers)-1, win="right")
+                        return
 
     def print_layers(self):
         """Print layers of the model to the console
@@ -77,36 +174,37 @@ class Visualizer(QtWidgets.QMainWindow):
             print("\t %d:" % i, self.skip_connections[i])
         print("\n\n")
 
-    def view_response(self, data, layer=0):
+    def view_response(self, data, layer=0, win="middle"):
         """Display the response of a certain layer to the input data
         
             Parameters:
                 data -- input data of the network
                 layer -- non-negative integer representing the number of a layer
                         a response of which is to be viewed
+                win -- window in which the image should be displayed
         """
         # Copy data to the gpu for faster forward propagation
         data_on_gpu = data.to(self.device)
         self.input = data_on_gpu
-        response_on_gpu = self.forward(data_on_gpu, layer, is_top_level_call=True)
+        response_on_gpu, _ = self.forward(data_on_gpu, layer, is_top_level_call=True)
         # Move the resulting response back to the cpu
         response_on_cpu = response_on_gpu.cpu()
         # Shape is (1, num_filters, resolution_x, resolution_y)
         # print("\tShape of the response:", response_on_cpu.shape, " on the layer %d" % layer)
         # Convert the response from its tensor form to a numpy array
-        response_on_cpu = (response_on_cpu[0][:].detach().numpy()*255).astype(np.uint8)
+        response_on_cpu = (response_on_cpu[0][:].detach().numpy()).astype(np.float)
         # Compute the number of filters per row and column in the resulting image
-        grid_size = int(round(np.sqrt(response_on_cpu.shape[0])))
+        grid_size = int(np.floor(np.sqrt(response_on_cpu.shape[0])))
         grid_size = grid_size+1 if (grid_size**2 != response_on_cpu.shape[0]) else grid_size
         # If the tensor has size 3 on axis 0, then it is an RGB image
         if response_on_cpu.shape[0] == 3:
-            self.display(response_on_gpu.cpu(), window="right")
+            self.display(response_on_gpu.cpu(), window=win)
         else:
             image = None
             # Concatenate the responses of all filters in one image
             for j in range(grid_size):
                 # Make a row of the image
-                if j * grid_size < response_on_cpu.shape[0]:
+                if j * grid_size <= response_on_cpu.shape[0]:
                     row = response_on_cpu[j*grid_size]
                 else:
                     break
@@ -120,15 +218,20 @@ class Visualizer(QtWidgets.QMainWindow):
                     # If the number of filters does not allow to make a square image
                     # Fill the remaining part with zeros and exit the loop
                     if row.shape[1] < image.shape[1]:
-                        row = np.concatenate((row, np.zeros((row.shape[0],image.shape[1]-row.shape[1]),dtype=np.uint8)), axis=1)
+                        row = np.concatenate((row, np.full((row.shape[0],image.shape[1]-row.shape[1]), -np.inf)), axis=1)
                         image = np.concatenate((image,row),axis=0)
+                        j += 1
+                        while j*response_on_cpu.shape[2] < response_on_cpu.shape[2] * grid_size:
+                            row = np.full((response_on_cpu.shape[1], response_on_cpu.shape[2]*grid_size), -np.inf)
+                            image = np.concatenate((image, row), axis=0)
+                            j += 1
                         break
                     image = np.concatenate((image,row),axis=0)
             # Display the image
-            self.display(image, window="right")
+            self.display(image, window=win)
 
     def forward(self, data, layer=0, is_top_level_call=False):
-        """Run forwrard propagation until the specified layer
+        """Run forwrard propagation until the specified layer, considering masks
         
             Parameters:
                 data -- input data
@@ -143,19 +246,38 @@ class Visualizer(QtWidgets.QMainWindow):
         target_layer = self.layers[layer]
         if layer in list(zip(*self.skip_connections))[1]:
             connection = self.skip_connections[list(zip(*self.skip_connections))[1].index(layer)][0]
-            x = self.forward(self.input, connection)
-            data = self.forward(data, layer-1)
+            x, _ = self.forward(self.input, connection)
+            data, _ = self.forward(data, layer-1)
             if is_top_level_call:
-                return target_layer(data)
+                # If the filter masks have been initialize, apply them to the result
+                if isinstance(self.masks, dict) and len(self.masks.keys()) == 2:
+                    value = target_layer(data) * self.masks[self.opt.direction][layer].to(self.device)
+                else:
+                    value = target_layer(data)
+                return value, value.size()
             else:
-                return target_layer(cat([x, data], 1))
+                # If the filter masks have been initialize, apply them to the result
+                if isinstance(self.masks, dict) and len(self.masks.keys()) == 2:
+                    value = target_layer(cat([x, data * self.masks[self.opt.direction][layer].to(self.device)], 1))
+                else:
+                    value = target_layer(cat([x, data], 1))
+                return value, value.size()
         if layer > 0:
-            data = self.forward(data, layer-1)
-            return target_layer(data)
+            data, _ = self.forward(data, layer-1)
+            # If the filter masks have been initialize, apply them to the result
+            if isinstance(self.masks, dict) and len(self.masks.keys()) == 2:
+                value = target_layer(data) * self.masks[self.opt.direction][layer].to(self.device)
+            else:
+                value = target_layer(data)
+            return value, value.size()
         else:
-            return target_layer(data)
+            if isinstance(self.masks, dict) and len(self.masks.keys()) == 2:
+                value = target_layer(data) * self.masks[self.opt.direction][layer].to(self.device)
+            else:
+                value = target_layer(data)
+            return value, value.size()
 
-    def tensor2im(self, input_image, imtype=np.uint8):
+    def tensor2im(self, input_image):
         """"Converts a Tensor array into a numpy image array.
 
         Parameters:
@@ -174,7 +296,7 @@ class Visualizer(QtWidgets.QMainWindow):
                                         (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
         else:  # if it is a numpy array, do nothing
             image_numpy = input_image
-        return image_numpy.astype(imtype)
+        return image_numpy
 
     def display(self, data, window="left"):
         """Display an image represented as a tensor
@@ -183,19 +305,45 @@ class Visualizer(QtWidgets.QMainWindow):
                 data -- input tensor or np.array representing an image
                 window -- a window in which the image will be displayed
         """
+        # Convert data to a numpy ndarray
         image = self.tensor2im(data)
         if len(image.shape) > 2:
+            image = image.astype(np.uint8)
             height, width, channel = image.shape
             image_format = QImage.Format_RGB888
             bytes_per_line = 3 * width
         else:
-            height, width = image.shape
-            image_format = QImage.Format_Grayscale8
-            bytes_per_line = width
+            if window == "middle":
+                image = image.astype(np.float)
+                # figure = plt.figure(num=1,figsize=(3, 3))
+                figure = plt.figure(frameon=False)
+                figure.set_size_inches(image.shape[1]/32, image.shape[0]/32)
+                # figure, ax = plt.subplots(num=1, figsize=(8, 8), frameon=False)
+                import matplotlib.cm as cm
+                ax = plt.Axes(figure, [0., 0., 1., 1.])
+                ax.set_axis_off()
+                figure.add_axes(ax)
+                ax.imshow(image, cmap=cm.jet)
+                # sns.heatmap(image, ax=ax)
+                figure.canvas.draw()
+                data = np.fromstring(figure.canvas.tostring_rgb(), dtype=np.uint8)
+                data = data.reshape(figure.canvas.get_width_height()[::-1] + (3,))
+                image = data
+                # Close the figure
+                plt.close(fig=figure)
+                height, width, channel = image.shape
+                image_format = QImage.Format_RGB888
+                bytes_per_line = 3 * width
+            else:
+                height, width = image.shape
+                image_format = QImage.Format_Grayscale8
+                bytes_per_line = width
         if window == "left":
             view = self.graphicsView_original
-        else:
+        elif window == "middle":
             view = self.graphicsView_response
+        else:
+            view = self.graphicsView_output
         qt_image = QImage(image.tobytes(), width, height, bytes_per_line, image_format)
         view.setPhoto(QPixmap(qt_image))
 
@@ -289,8 +437,16 @@ class Visualizer(QtWidgets.QMainWindow):
             image = trans(image)
             self.input = image.unsqueeze(0)
             self.display(data=self.input, window="left")
+            if self.opt.direction == 'AtoB':
+                self.display(data=self.model.netG_A(self.input), window="right")
+            else:
+                self.display(data=self.model.netG_B(self.input), window="right")
             self.view_response(self.input, layer=self.current_layer)
             self.title_response.setText("Response of layer %d" % (self.current_layer+1))
+            # Initialize filter masks
+            if self.masks is None:
+                self.masks = {'BtoA': self.make_mask(self.layers),
+                    'AtoB': self.make_mask(parser.Parser(self.framework, self.model.netG_A.module).get_layers()[0])}
 
     def switch_direction(self):
         """Switch direction in a CycleGAN model"""
